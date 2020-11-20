@@ -214,7 +214,8 @@ static const struct attr_ops vmcoreinfo_lines_ops = {
 static kdump_status
 vmcoreinfo_raw_post_hook(kdump_ctx_t *ctx, struct attr_data *rawattr)
 {
-	const char *p, *endp, *val;
+	kdump_blob_t *blob;
+	const char *p, *endp, *endl, *val;
 	size_t len;
 	struct attr_data *dir;
 	kdump_status res;
@@ -222,24 +223,27 @@ vmcoreinfo_raw_post_hook(kdump_ctx_t *ctx, struct attr_data *rawattr)
 	dir = rawattr->parent;
 	dealloc_vmcoreinfo(dir);
 
-	for (p = attr_value(rawattr)->string; *p; p = endp) {
-		endp = strchrnul(p, '\n');
-		val = memchr(p, '=', endp - p);
+	blob = attr_value(rawattr)->blob;
+	p = internal_blob_pin(blob);
+	endp = p + blob->size;
+	while (p < endp) {
+		endl = memchr(p, '\n', endp - p) ?: endp;
+		val = memchr(p, '=', endl - p);
 		if (val) {
 			len = val - p;
 			++val;
 		} else {
-			val = endp;
+			val = endl;
 			len = val - p;
 		}
 
-		res = add_parsed_row(ctx, dir, p, len, val, endp - val);
+		res = add_parsed_row(ctx, dir, p, len, val, endl - val);
 		if (res != KDUMP_OK)
 			break;
 
-		if (*endp)
-			++endp;
+		p = endl + 1;
 	}
+	internal_blob_unpin(blob);
 
 	return res;
 }
@@ -256,7 +260,7 @@ const struct attr_ops vmcoreinfo_raw_ops = {
 };
 
 static kdump_status
-get_raw_locked(kdump_ctx_t *ctx, const char **raw)
+get_raw_locked(kdump_ctx_t *ctx, char **raw)
 {
 	static const struct ostype_attr_map raw_map[] = {
 		{ ADDRXLAT_OS_LINUX, GKI_linux_vmcoreinfo_raw },
@@ -264,6 +268,7 @@ get_raw_locked(kdump_ctx_t *ctx, const char **raw)
 		{ ADDRXLAT_OS_UNKNOWN }
 	};
 	struct attr_data *attr = ostype_attr(ctx, raw_map);
+	size_t len;
 	kdump_status status;
 
 	if (!attr)
@@ -278,12 +283,19 @@ get_raw_locked(kdump_ctx_t *ctx, const char **raw)
 		return set_error(ctx, status,
 				 "Value cannot be revalidated");
 
-	*raw = attr_value(attr)->string;
+	len = attr_value(attr)->blob->size;
+	*raw = malloc(len + 1);
+	if (!*raw)
+		return set_error(ctx, KDUMP_ERR_SYSTEM,
+				 "Cannot allocate raw attribute value");
+	memcpy(*raw, attr_value(attr)->blob->data, len);
+	(*raw)[len] = 0;
+
 	return KDUMP_OK;
 }
 
 kdump_status
-kdump_vmcoreinfo_raw(kdump_ctx_t *ctx, const char **raw)
+kdump_vmcoreinfo_raw(kdump_ctx_t *ctx, char **raw)
 {
 	kdump_status ret;
 
@@ -327,13 +339,17 @@ get_line_locked(kdump_ctx_t *ctx, const char *key,
 		return set_error(ctx, status,
 				 "Value cannot be revalidated");
 
-	*val = attr_value(attr)->string;
+	*val = strdup(attr_value(attr)->string);
+	if (!*val)
+		return set_error(ctx, KDUMP_ERR_SYSTEM,
+				 "Cannot allocate attribute value");
+
 	return KDUMP_OK;
 }
 
 kdump_status
 kdump_vmcoreinfo_line(kdump_ctx_t *ctx, const char *key,
-		      const char **val)
+		      char **val)
 {
 	kdump_status ret;
 

@@ -537,6 +537,65 @@ const struct attr_ops xen_ver_ops = {
 	.post_set = xen_ver_post_hook,
 };
 
+/**  Re-allocate a cache with default parameters.
+ * @param ctx  Dump file object.
+ * @returns    Error status.
+ *
+ * This function can be used as the @c realloc_caches method if
+ * the cache is organized as @c cache.size elements of @c arch.page_size
+ * bytes each.
+ */
+kdump_status
+def_realloc_caches(kdump_ctx_t *ctx)
+{
+	unsigned cache_size = get_cache_size(ctx);
+	struct cache *cache;
+	kdump_status status;
+
+	cache = cache_alloc(cache_size, get_page_size(ctx));
+	if (!cache)
+		return set_error(ctx, KDUMP_ERR_SYSTEM,
+				 "Cannot allocate cache (%u * %zu bytes)",
+				 cache_size, get_page_size(ctx));
+
+	status = cache_set_attrs(cache, ctx,
+				 gattr(ctx, GKI_cache_hits),
+				 gattr(ctx, GKI_cache_misses));
+	if (status != KDUMP_OK) {
+		cache_free(cache);
+		return status;
+	}
+
+	if (ctx->shared->cache)
+		cache_free(ctx->shared->cache);
+	ctx->shared->cache = cache;
+
+	return KDUMP_OK;
+}
+
+static kdump_status
+cache_size_pre_hook(kdump_ctx_t *ctx, struct attr_data *attr,
+		    kdump_attr_value_t *val)
+{
+	if (val->number > UINT_MAX)
+		return set_error(ctx, KDUMP_ERR_INVALID,
+				 "Cache size too big (max %u)", UINT_MAX);
+	return KDUMP_OK;
+}
+
+static kdump_status
+cache_size_post_hook(kdump_ctx_t *ctx, struct attr_data *attr)
+{
+	return ctx->shared->ops && ctx->shared->ops->realloc_caches
+		? ctx->shared->ops->realloc_caches(ctx)
+		: KDUMP_OK;
+}
+
+const struct attr_ops cache_size_ops = {
+	.pre_set = cache_size_pre_hook,
+	.post_set = cache_size_post_hook,
+};
+
 static kdump_status
 page_size_pre_hook(kdump_ctx_t *ctx, struct attr_data *attr,
 		   kdump_attr_value_t *newval)
@@ -874,7 +933,6 @@ init_cpu_blob_attr(kdump_ctx_t *ctx, unsigned cpu,
 		   const void *data, size_t size,
 		   const struct attr_template *tmpl)
 {
-	void *buffer;
 	struct attr_data *dir, *attr;
 	kdump_attr_value_t val;
 	kdump_status status;
@@ -883,32 +941,22 @@ init_cpu_blob_attr(kdump_ctx_t *ctx, unsigned cpu,
 	if (status != KDUMP_OK)
 		return status;
 
-	buffer = malloc(size);
-	if (!buffer)
-		return set_error(ctx, KDUMP_ERR_SYSTEM,
-				 "Buffer allocation failed");
-	memcpy(buffer, data, size);
-
-	val.blob = kdump_blob_new(buffer, size);
-	if (!val.blob) {
-		free(buffer);
+	val.blob = internal_blob_new_dup(data, size);
+	if (!val.blob)
 		return set_error(ctx, KDUMP_ERR_SYSTEM,
 				 "Blob allocation failed");
-	}
 
 	attr = new_attr(ctx->dict, dir, tmpl);
 	if (!attr) {
-		kdump_blob_decref(val.blob);
+		internal_blob_decref(val.blob);
 		return set_error(ctx, status,
 				 "Attribute allocation failed");
 	}
 
 	status = set_attr(ctx, attr, ATTR_DEFAULT, &val);
-	if (status != KDUMP_OK) {
-		kdump_blob_decref(val.blob);
+	if (status != KDUMP_OK)
 		return set_error(ctx, status,
 				 "Cannot set attribute");
-	}
 
 	return status;
 }
@@ -972,7 +1020,8 @@ get_attr_blob(kdump_ctx_t *ctx, struct attr_data *attr,
 
 	raw = lookup_attr_child(attr->parent, tmpl);
 	if (!raw)
-		return set_error(ctx, KDUMP_ERR_NODATA, "PRSTATUS not found");
+		return set_error(ctx, KDUMP_ERR_NODATA,
+				 "%s raw attribute not found", tmpl->key);
 
 	*blob = raw->val.blob;
 	return KDUMP_OK;

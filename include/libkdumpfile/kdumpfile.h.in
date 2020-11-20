@@ -71,6 +71,17 @@ extern "C" {
  */
 typedef uint_fast64_t kdump_num_t;
 
+/** @name fprintf() macros for the libkdumpfile number type
+ * @{
+ *
+ * POSIX @c PRI_xxx style macros for use with @ref kdump_num_t.
+ */
+#define KDUMP_PRIoNUM	PRIoFAST64 /**< Octal @c kdump_num_t */
+#define KDUMP_PRIuNUM	PRIuFAST64 /**< Decimal @c kdump_num_t */
+#define KDUMP_PRIxNUM	PRIxFAST64 /**< Lowercase hex @c kdump_num_t */
+#define KDUMP_PRIXNUM	PRIXFAST64 /**< Uppercase hex @c kdump_num_t */
+/* @} */
+
 /**  Type of a physical or virtual address.
  *
  * This type is large enough to hold any possible address type on any
@@ -96,6 +107,18 @@ typedef kdump_addr_t kdump_paddr_t;
  * known to be a virtual address.
  */
 typedef kdump_addr_t kdump_vaddr_t;
+
+/** @name fprintf() macros for the libkdumpfile address type
+ * @{
+ *
+ * POSIX @c PRI_xxx style macros for use with @ref kdump_addr_t,
+ * @ref kdump_paddr_t and @ref kdump_vaddr_t.
+ */
+#define KDUMP_PRIoADDR	ADDRXLAT_PRIoADDR /**< Octal address */
+#define KDUMP_PRIuADDR	ADDRXLAT_PRIuADDR /**< Decimal address */
+#define KDUMP_PRIxADDR	ADDRXLAT_PRIxADDR /**< Lowercase hex address */
+#define KDUMP_PRIXADDR	ADDRXLAT_PRIXADDR /**< Uppercase hex address */
+/* @} */
 
 /**  Representation of a dump file.
  *
@@ -137,6 +160,24 @@ typedef enum _kdump_byte_order {
 	KDUMP_BIG_ENDIAN = ADDRXLAT_BIG_ENDIAN,
 	KDUMP_LITTLE_ENDIAN = ADDRXLAT_LITTLE_ENDIAN,
 } kdump_byte_order_t;
+
+/**  File mmap policy.
+ *
+ * Control if and how mmap(2) should be used to access data from the
+ * underlying core file.
+ *
+ * @sa KDUMP_ATTR_FILE_MMAP_POLICY
+ */
+typedef enum _kdump_mmap_policy {
+	KDUMP_MMAP_NEVER,	/**< Never use mmap(2), always use read(2). */
+	KDUMP_MMAP_ALWAYS,	/**< Always use mmap(2), never use read(2). */
+	KDUMP_MMAP_TRY,		/**< Try mmap(2), fall back to read(2). */
+
+	/** Same as @c KDUMP_MMAP_TRY, but change to @c KDUMP_MMAP_NEVER
+	 *  or @c KDUMP_MMAP_ALWAYS based on the result of the next read.
+	 */
+	KDUMP_MMAP_TRY_ONCE,
+} kdump_mmap_policy_t;
 
 /**  Type of a Xen dump.
  * @sa KDUMP_ATTR_XEN_TYPE
@@ -405,6 +446,35 @@ kdump_status kdump_bmp_find_clear(
  * A blob contains arbitrary binary data.
  */
 typedef struct _kdump_blob kdump_blob_t;
+
+/** Create a new blob object.
+ * @param data  Raw data buffer (can be @c NULL).
+ * @param size  Length of data at @c data.
+ * @returns     New blob object, or @c NULL on allocation error.
+ *
+ * Create a new blob object from a dynamically allocated memory buffer.
+ * Keep in mind that the buffer will be eventually de-allocated with
+ * free(3) when the blob reference count drops to zero.
+ *
+ * If @c data is @c NULL, then the blob does not contain any data.
+ *
+ * The new object's reference count is initialized to 1 (the caller
+ * receives one reference), and the memory buffer is not pinned.
+ */
+kdump_blob_t *kdump_blob_new(void *data, size_t size);
+
+/** Create a new blob object from a copy of a buffer.
+ * @param data  Raw data buffer (can be @c NULL).
+ * @param size  Length of data at @c data.
+ * @returns     New blob object, or @c NULL on allocation error.
+ *
+ * Create a new blob object by duplicating data from a buffer. The
+ * data is copied into a newly allocated buffer which is owned by
+ * the blob object itself.
+ *
+ * @sa kdump_blob_new
+ */
+kdump_blob_t *kdump_blob_new_dup(const void *data, size_t size);
 
 /** Increment kdump blob reference counter.
  * @param blob   Binary object.
@@ -923,24 +993,36 @@ void kdump_attr_iter_end(kdump_ctx_t *ctx, kdump_attr_iter_t *iter);
 /** Fill excluded pages with zeroes? */
 #define KDUMP_ATTR_ZERO_EXCLUDED "file.zero_excluded"
 
+/** Policy for using mmap vs. read.
+ * Default is @c KDUMP_MMAP_TRY.
+ * @sa kdump_mmap_policy_t
+ */
+#define KDUMP_ATTR_FILE_MMAP_POLICY	"file.mmap_policy"
+
 /**  Get VMCOREINFO raw data.
  * @param ctx  Dump file object.
- * @param raw  Filled with raw VMCOREINFO string on success.
+ * @param raw  Filled with a copy of the raw VMCOREINFO string on success.
  * @returns    Error status.
  *
  * The output string is always NUL-terminated, but if there was a NUL
  * byte inside VMCOREINFO, there is no way to know the full length.
+ *
+ * The output string is dynamically allocated and must be eventually
+ * deallocated by the caller using @c free(3).
  */
-kdump_status kdump_vmcoreinfo_raw(kdump_ctx_t *ctx, const char **raw);
+kdump_status kdump_vmcoreinfo_raw(kdump_ctx_t *ctx, char **raw);
 
 /**  Get a VMCOREINFO line.
  * @param ctx       Dump file object.
  * @param[in] key   Name of the VMCOREINFO variable (part before '=').
  * @param[out] val  Filled with the part after (first) '='.
  * @returns         Error status.
+ *
+ * The output string is dynamically allocated and must be eventually
+ * deallocated by the caller using @c free(3).
  */
 kdump_status kdump_vmcoreinfo_line(kdump_ctx_t *ctx, const char *key,
-				   const char **val);
+				   char **val);
 
 /**  Get VMCOREINFO symbol value.
  * @param ctx            Dump file object.

@@ -35,12 +35,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-/** Allocate a new bitmap object.
- * @param ops  Bitmap operations.
- * @returns    New bitmap, or @c NULL on allocation error.
- *
- * The new object's reference count is initialized to 1.
- */
 kdump_blob_t *
 kdump_blob_new(void *data, size_t size)
 {
@@ -53,6 +47,26 @@ kdump_blob_new(void *data, size_t size)
 		blob->size = size;
 	}
 	return blob;
+}
+
+kdump_blob_t *
+kdump_blob_new_dup(const void *data, size_t size)
+{
+	kdump_blob_t *ret;
+	void *newdata;
+
+	if (data) {
+		newdata = malloc(size);
+		if (!newdata)
+			return NULL;
+		memcpy(newdata, data, size);
+		data = newdata;
+	} else
+		newdata = NULL;
+	ret = internal_blob_new(newdata, size);
+	if (!ret && newdata)
+		free(newdata);
+	return ret;
 }
 
 unsigned long

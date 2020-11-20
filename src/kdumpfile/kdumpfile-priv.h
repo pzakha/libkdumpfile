@@ -209,6 +209,8 @@ struct format_ops {
 	void (*cleanup)(struct kdump_shared *);
 };
 
+INTERNAL_DECL(kdump_status, def_realloc_caches, (kdump_ctx_t *ctx));
+
 struct arch_ops {
 	/** Initialize any arch-specific data. */
 	kdump_status (*init)(kdump_ctx_t *);
@@ -218,6 +220,15 @@ struct arch_ops {
 
 	/** Process a Xen .xen_prstatus section. */
 	kdump_status (*process_xen_prstatus)(kdump_ctx_t *, const void *, size_t);
+
+	/** OS type post-hook.
+	 * @param ctx  Dump file object.
+	 * @returns    Status code.
+	 *
+	 * This hook is called after the OS type is changed to allow
+	 * arch-specific initialization (e.g. read OS_INFO on s390x).
+	 */
+	kdump_status (*post_ostype)(kdump_ctx_t *ctx);
 
 	/** Address translation post-hook.
 	 * @param ctx  Dump file object.
@@ -272,6 +283,9 @@ struct _kdump_bmp {
 	kdump_errmsg_t err;
 };
 
+DECLARE_ALIAS(bmp_incref);
+DECLARE_ALIAS(bmp_decref);
+
 INTERNAL_DECL(kdump_bmp_t *, kdump_bmp_new,
 	      (const struct kdump_bmp_ops *ops));
 
@@ -292,9 +306,10 @@ struct _kdump_blob {
 	size_t size;		/**< Size of binary data. */
 };
 
-INTERNAL_DECL(kdump_blob_t *, kdump_blob_new,
-	      (void *data, size_t size));
-
+DECLARE_ALIAS(blob_new);
+DECLARE_ALIAS(blob_new_dup);
+DECLARE_ALIAS(blob_incref);
+DECLARE_ALIAS(blob_decref);
 DECLARE_ALIAS(blob_pin);
 DECLARE_ALIAS(blob_unpin);
 
@@ -418,6 +433,7 @@ struct attr_template {
 		unsigned depth;
 	};
 	kdump_attr_type_t type;
+	unsigned override:1;	/**< Set iff this is a template override. */
 	const struct attr_ops *ops;
 };
 
@@ -1020,6 +1036,21 @@ attr_value(const struct attr_data *attr)
 	return attr->flags.indirect ? attr->pval : &attr->val;
 }
 
+/**  Make sure that attribute value is embedded (not indirect).
+ * @param attr  Attribute data.
+ *
+ * If the attribute is indirect, copy the value into the attribute
+ * data itself and clear the indirect flag.
+ */
+static inline void
+attr_embed_value(struct attr_data *attr)
+{
+	if (attr->flags.indirect) {
+		attr->val = *attr->pval;
+		attr->flags.indirect = 0;
+	}
+}
+
 /**  Revalidate attribute data.
  * @param ctx   Dump file object.
  * @param attr  Attribute data.
@@ -1209,7 +1240,9 @@ INTERNAL_DECL(void, cache_put_entry,
 INTERNAL_DECL(void, cache_insert, (struct cache *, struct cache_entry *));
 INTERNAL_DECL(void, cache_discard, (struct cache *, struct cache_entry *));
 
-INTERNAL_DECL(kdump_status, def_realloc_caches, (kdump_ctx_t *ctx));
+INTERNAL_DECL(kdump_status, cache_set_attrs,
+	      (struct cache *cache, kdump_ctx_t *ctx,
+	       struct attr_data *hits, struct attr_data *misses));
 
 /**  Check if a cache entry is valid.
  *
@@ -1248,6 +1281,11 @@ struct fcache {
 
 	/** Open file descriptor. */
 	int fd;
+
+	/** Policy for using mmap(2) vs. read(2).
+	 * @sa kdump_mmap_policy_t
+	 */
+	kdump_attr_value_t mmap_policy;
 
 	/** Page size (in bytes). */
 	size_t pgsz;

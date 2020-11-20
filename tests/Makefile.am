@@ -153,6 +153,7 @@ test_scripts = \
 	addrxlat-s390x-5l \
 	addrxlat-x86_64-4l \
 	addrxlat-x86_64-5l \
+	addrxlat-x86_64-sme \
 	addrxlat-invalid-pfn32 \
 	addrxlat-invalid-pfn64 \
 	addrxlat-invalid-ia32 \
@@ -256,6 +257,7 @@ test_scripts = \
 	xlat-linux-x86_64-2.6.31-nover \
 	xlat-linux-x86_64-2.6.31-nover-reloc \
 	xlat-linux-x86_64-2.6.31-nover-xen \
+	xlat-linux-x86_64-4.12-sme \
 	xlat-linux-x86_64-4.13-nover \
 	xlat-linux-x86_64-4.13-kaslr \
 	xlat-linux-x86_64-5l \
@@ -401,6 +403,9 @@ dist_check_DATA = \
 	xlat-linux-x86_64-2.6.31-reloc.data \
 	xlat-linux-x86_64-2.6.31-reloc.expect \
 	xlat-linux-x86_64-2.6.31-reloc.sym \
+	xlat-linux-x86_64-4.12-sme.data \
+	xlat-linux-x86_64-4.12-sme.expect \
+	xlat-linux-x86_64-4.12-sme.sym \
 	xlat-linux-x86_64-4.13-nover.data \
 	xlat-linux-x86_64-4.13-nover.expect \
 	xlat-linux-x86_64-4.13-nover.sym \

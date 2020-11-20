@@ -80,16 +80,41 @@ static const struct format_ops *formats[] = {
 static kdump_status
 file_fd_post_hook(kdump_ctx_t *ctx, struct attr_data *attr)
 {
+	/* Attributes that point into ctx->shared->fcache */
+	static const enum global_keyidx fcache_attrs[] = {
+		GKI_file_mmap_policy,
+		GKI_mmap_cache_hits,
+		GKI_mmap_cache_misses,
+		GKI_read_cache_hits,
+		GKI_read_cache_misses,
+	};
+
+	struct attr_data *mmap_attr;
 	kdump_status ret;
 	int i;
 
-	if (ctx->shared->fcache)
+	if (ctx->shared->fcache) {
+		for (i = 0; i < ARRAY_SIZE(fcache_attrs); ++i)
+			attr_embed_value(gattr(ctx, fcache_attrs[i]));
 		fcache_decref(ctx->shared->fcache);
+	}
 	ctx->shared->fcache = fcache_new(get_file_fd(ctx),
 					 FCACHE_SIZE, FCACHE_ORDER);
 	if (!ctx->shared->fcache)
 		return set_error(ctx, KDUMP_ERR_SYSTEM,
 				 "Cannot allocate file cache");
+
+	mmap_attr = gattr(ctx, GKI_file_mmap_policy);
+	ctx->shared->fcache->mmap_policy = *attr_value(mmap_attr);
+	set_attr(ctx, mmap_attr, ATTR_PERSIST_INDIRECT,
+		 &ctx->shared->fcache->mmap_policy);
+
+	cache_set_attrs(ctx->shared->fcache->cache, ctx,
+			gattr(ctx, GKI_mmap_cache_hits),
+			gattr(ctx, GKI_mmap_cache_misses));
+	cache_set_attrs(ctx->shared->fcache->fbcache, ctx,
+			gattr(ctx, GKI_read_cache_hits),
+			gattr(ctx, GKI_read_cache_misses));
 
 	ctx->xlat->dirty = true;
 
@@ -260,6 +285,12 @@ ostype_post_hook(kdump_ctx_t *ctx, struct attr_data *attr)
 	kdump_status status;
 
 	ctx->xlat->dirty = true;
+
+	if (ctx->shared->arch_ops && ctx->shared->arch_ops->post_ostype) {
+		status = ctx->shared->arch_ops->post_ostype(ctx);
+		if (status != KDUMP_OK)
+			return status;
+	}
 
 	switch (ctx->xlat->ostype) {
 	case ADDRXLAT_OS_LINUX:

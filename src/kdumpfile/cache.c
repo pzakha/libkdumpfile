@@ -818,57 +818,30 @@ get_cache_size(kdump_ctx_t *ctx)
 		: DEFAULT_CACHE_SIZE;
 }
 
-/**  Re-allocate a cache with default parameters.
- * @param ctx  Dump file object.
- * @returns    Error status.
- *
- * This function can be used as the @c realloc_caches method if
- * the cache is organized as @c cache.size elements of @c arch.page_size
- * bytes each.
+/**  Set up cache statistics attributes.
+ * @param cache   Cache object.
+ * @param ctx     Dump file object containing the attributes.
+ * @param hits    Attribute for cache hits.
+ * @param misses  Attribute for cache misses.
+ * @returns       Error status.
  */
 kdump_status
-def_realloc_caches(kdump_ctx_t *ctx)
+cache_set_attrs(struct cache *cache, kdump_ctx_t *ctx,
+		struct attr_data *hits, struct attr_data *misses)
 {
-	unsigned cache_size = get_cache_size(ctx);
-	struct cache *cache;
+	kdump_status status;
 
-	cache = cache_alloc(cache_size, get_page_size(ctx));
-	if (!cache)
-		return set_error(ctx, KDUMP_ERR_SYSTEM,
-				 "Cannot allocate cache (%u * %zu bytes)",
-				 cache_size, get_page_size(ctx));
+	status = set_attr(ctx, hits, ATTR_PERSIST_INDIRECT, &cache->hits);
+	if (status != KDUMP_OK)
+		return set_error(ctx, status,
+				 "Cannot set up cache '%s' attribute",
+				 "hits");
 
-	set_attr(ctx, gattr(ctx, GKI_cache_hits),
-		 ATTR_PERSIST_INDIRECT, &cache->hits);
-	set_attr(ctx, gattr(ctx, GKI_cache_misses),
-		 ATTR_PERSIST_INDIRECT, &cache->misses);
-
-	if (ctx->shared->cache)
-		cache_free(ctx->shared->cache);
-	ctx->shared->cache = cache;
+	status = set_attr(ctx, misses, ATTR_PERSIST_INDIRECT, &cache->misses);
+	if (status != KDUMP_OK)
+		return set_error(ctx, status,
+				 "Cannot set up cache '%s' attribute",
+				 "misses");
 
 	return KDUMP_OK;
 }
-
-static kdump_status
-cache_size_pre_hook(kdump_ctx_t *ctx, struct attr_data *attr,
-		    kdump_attr_value_t *val)
-{
-	if (val->number > UINT_MAX)
-		return set_error(ctx, KDUMP_ERR_INVALID,
-				 "Cache size too big (max %u)", UINT_MAX);
-	return KDUMP_OK;
-}
-
-static kdump_status
-cache_size_post_hook(kdump_ctx_t *ctx, struct attr_data *attr)
-{
-	return ctx->shared->ops && ctx->shared->ops->realloc_caches
-		? ctx->shared->ops->realloc_caches(ctx)
-		: KDUMP_OK;
-}
-
-const struct attr_ops cache_size_ops = {
-	.pre_set = cache_size_pre_hook,
-	.post_set = cache_size_post_hook,
-};

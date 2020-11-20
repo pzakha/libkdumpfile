@@ -23,17 +23,42 @@ AM_CPPFLAGS = -I$(top_builddir)/include
 AM_CFLAGS = $(PYTHON_CFLAGS)
 AM_LDFLAGS = -module -avoid-version
 
-pyexec_LTLIBRARIES = _addrxlat.la _kdumpfile.la
+installed_list = installed.list
 
-_addrxlat_la_SOURCES = addrxlat.c
-_addrxlat_la_LDFLAGS = $(AM_LDFLAGS) -export-symbols $(srcdir)/addrxlat.sym
-_addrxlat_la_LIBADD = $(PYTHON_LIBS) $(top_builddir)/src/addrxlat/libaddrxlat.la
-EXTRA__addrxlat_la_DEPENDENCIES = addrxlat.sym
+setup.cfg: Makefile
+	$(AM_V_GEN)
+	$(AM_V_at)echo "[kdumpfile]" > $@
+	$(AM_V_at)echo "version=$(VERSION)" >> $@
+	$(AM_V_at)echo "srcdir=$(srcdir)" >> $@
+	$(AM_V_at)echo "top_builddir=$(top_builddir)" >> $@
+	$(AM_V_at)echo >> $@
+	$(AM_V_at)echo "[build_ext]" >> $@
+	$(AM_V_at)echo "libtool=$(LIBTOOL)" >> $@
+	$(AM_V_at)echo "pyexecdir=$(pyexecdir)" >> $@
+	$(AM_V_at)echo >> $@
+	$(AM_V_at)echo "[install_lib]" >> $@
+	$(AM_V_at)echo "libtool_install=$(LIBTOOL) --mode=install $(INSTALL)" >> $@
 
-_kdumpfile_la_SOURCES = kdumpfile.c
-_kdumpfile_la_LDFLAGS = $(AM_LDFLAGS) -export-symbols $(srcdir)/kdumpfile.sym
-_kdumpfile_la_LIBADD = $(PYTHON_LIBS) $(top_builddir)/src/kdumpfile/libkdumpfile.la
-EXTRA__kdumpfile_la_DEPENDENCIES = kdumpfile.sym
+all-local: setup.cfg
+	$(PYTHON) $(srcdir)/setup.py build
+
+install-exec-local: setup.cfg
+	$(PYTHON) $(srcdir)/setup.py install \
+		--root "$(DESTDIR)"/ \
+		--install-purelib $(pythondir) \
+		--install-platlib $(pyexecdir) \
+		--record $(installed_list)
+
+uninstall-local: $(installed_list)
+	while read f ; do \
+	    $(LIBTOOL) --mode=uninstall rm -f "$(DESTDIR)/$$f" ; \
+	done < $<
+
+mostlyclean-local: setup.cfg
+	$(PYTHON) $(srcdir)/setup.py clean --all
+	rm $<
+
+CLEANFILES = $(installed_list)
 
 check_LTLIBRARIES = _test_addrxlat.la
 
@@ -45,12 +70,21 @@ _test_addrxlat_la_LDFLAGS = \
 _test_addrxlat_la_LIBADD = $(PYTHON_LIBS) $(top_builddir)/src/addrxlat/libaddrxlat.la
 EXTRA__test_addrxlat_la_DEPENDENCIES = test_addrxlat.sym
 
-dist_noinst_DATA = \
-	addrxlat.sym \
-	kdumpfile.sym \
-	test_addrxlat.sym \
+dist_noinst_SCRIPTS = \
+	setup.py \
+	libtoolize.py \
+	addrxlat/__init__.py \
+	addrxlat/exceptions.py \
+	kdumpfile/__init__.py \
+	kdumpfile/exceptions.py \
+	kdumpfile/views.py \
 	showxlat.py \
 	vtop.py
+
+dist_noinst_DATA = \
+	addrxlat.c \
+	kdumpfile.c \
+	test_addrxlat.sym
 
 noinst_HEADERS = \
 	addrxlatmod.h
@@ -68,5 +102,3 @@ LOG_COMPILER = $(PYTHON)
 AM_TESTS_ENVIRONMENT = \
 eval " $$($(LIBTOOL) --config)"; \
 PYTHONPATH="$$srcdir:$$objdir"
-
-SUBDIRS = addrxlat kdumpfile

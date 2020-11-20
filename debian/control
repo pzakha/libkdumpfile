@@ -17,5 +17,5 @@ Build-Depends: autoconf,
 
 Package: libkdumpfile
 Architecture: any
-Depends: ${shlibs:Depends}, ${python3:Depends}
+Depends: libsnappy-dev, ${shlibs:Depends}, ${python3:Depends}
 Description: Kernel coredump file access
