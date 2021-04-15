@@ -34,12 +34,7 @@ jobs:
   #
   dev-build-and-test-run:
     name: Developer Build and Testing 
-    #
-    # Unlike the debian package build job, we prefer
-    # ubuntu-latest for developer builds as they are
-    # more likely to upgrade first.
-    #
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     strategy:
       matrix:
         python-version: [3.6, 3.7, 3.8]
@@ -56,8 +51,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: (Debug) Print Python Version
         run: python3 --version
+      - name: Update apt cache to get all packages
+        run: sudo apt update
       - name: Install the correct Python developer files
-        run: sudo apt-get install -y python${{ matrix.python-version }}-dev
+        run: sudo apt install python${{ matrix.python-version }}-dev
       - name: Install dependencies
         run: ./.github/scripts/install-deps.sh
       - name: Perform Developer Build
